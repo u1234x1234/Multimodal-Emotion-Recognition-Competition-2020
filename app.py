@@ -35,7 +35,7 @@ class VideoLandmarkExtractor:
 def extract_landmarks():
     from uxils.multiprocessing_ext.map import map_class
 
-    paths = glob_videos("data/2020-1/train")
+    paths = glob_videos("data/2020-1/test1")
     np.random.shuffle(paths)
     print(len(paths))
 
