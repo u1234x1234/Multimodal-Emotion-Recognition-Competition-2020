@@ -130,3 +130,5 @@ dmypy.json
 /data
 /arti
 /face_crops
+*.mp4
+/face_images
