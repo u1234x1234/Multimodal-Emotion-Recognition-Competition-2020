@@ -16,7 +16,9 @@ from utils import Model, get_split, prepare_auido
 train_dataset, val_dataset = get_split()
 
 model = Model()
-optimizer = init_optimizer_with_model("adam", model)
+model.load_state_dict(torch.load("arti/8cb10e/25.pt"))
+
+optimizer = init_optimizer_with_model("sgd,0.01", model)
 
 
 def read(pv, pa, pt, y, yf, ys):
@@ -43,8 +45,8 @@ metric = init_metric("accuracy")
 out_dir, table = experiment_dir_with_table("arti")
 
 with seq_iterator_ctx(
-    train_dataset, read=read, subsample=10000
-) as train_iter, seq_iterator_ctx(val_dataset, read=read, subsample=100) as val_iter:
+    train_dataset, read=read, subsample=5000
+) as train_iter, seq_iterator_ctx(val_dataset, read=read, subsample=1000) as val_iter:
 
     for epoch_idx in range(1000):
         training_loop(

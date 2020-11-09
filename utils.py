@@ -1,4 +1,5 @@
 import os
+import glob
 
 import numpy as np
 import pandas as pd
@@ -27,6 +28,10 @@ CLASS_TO_ID = {name: idx for idx, name in enumerate(CLASSES)}
 
 def class_to_id(name):
     return CLASS_TO_ID[name]
+
+
+def ids_to_class(indices):
+    return [CLASSES[i] for i in indices]
 
 
 @cached_persistent
@@ -71,6 +76,21 @@ def get_split():
     return train, val
 
 
+def get_test():
+    root_dir = "data/2020-1/test1/"
+    paths = []
+    for vpath in glob.glob(f"{root_dir}/*.mp4"):
+        bn = os.path.basename(vpath)
+        v_id = bn.split("-")[0]
+        tpath = f"{root_dir}/{v_id}.npz"
+        apath = f"data/audio/test1/{bn.split('.')[0]}.wav"
+        vpath = f"face_images/{bn}"
+
+        paths.append((vpath, apath, tpath, v_id))
+
+    return paths
+
+
 def prepare_auido(path):
     try:
         audio = read_audio(path, sr=16000)
@@ -92,7 +112,7 @@ class Model(torch.nn.Module):
 
         self.speech_model = PretrainedSpeakerEmbedding("models/baseline_lite_ap.model")
         freeze_layers(self.speech_model, freeze=0.5, invert=0, matchers=(".*attention", "model[.]fc", ".*sap_linear"), verbose=1)
-        # freeze_layers(self.speech_model, freeze=0.5)
+        # freeze_layers(self.speech_model,)
 
         self.vision_model = get_face_recognition_model("imagenet_regnetx002", num_classes=100)[0]
         # self.text_model = init_sequential(200, [100])
