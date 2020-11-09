@@ -75,10 +75,15 @@ def prepare_auido(path):
     try:
         audio = read_audio(path, sr=16000)
     except:
-        audio = Audio(np.zeros(1000, dtype=np.float32), sample_rate=16000)
+        audio = Audio(np.zeros(16000, dtype=np.float32), sample_rate=16000)
 
-    xa = fixed_window(audio, 4)
+    xa = fixed_window(audio, 4)[16000:]
     return xa
+
+
+from uxils.torch_ext.utils import freeze_layers
+import timm
+from uxils.image.face.pretrained import get_face_recognition_model
 
 
 class Model(torch.nn.Module):
@@ -86,14 +91,21 @@ class Model(torch.nn.Module):
         super().__init__()
 
         self.speech_model = PretrainedSpeakerEmbedding("models/baseline_lite_ap.model")
-        self.text_model = init_sequential(200, [100])
-        self.out_nn = torch.nn.Linear(512+100, 7)
+        freeze_layers(self.speech_model, freeze=0.5, invert=0, matchers=(".*attention", "model[.]fc", ".*sap_linear"), verbose=1)
+        # freeze_layers(self.speech_model, freeze=0.5)
 
-    def forward(self, xt, xa):
-        xt = torch.stack([self.text_model(x).mean(dim=0) for x in xt], dim=0)
+        self.vision_model = get_face_recognition_model("imagenet_regnetx002", num_classes=100)[0]
+        # self.text_model = init_sequential(200, [100])
+
+        emb_size = 512 + 200 + 100
+        self.out_nn = init_sequential(emb_size, [128, "relu", 7])
+
+    def forward(self, xt, xa, xim):
+        # xt = torch.stack([self.text_model(x).mean(dim=0) for x in xt], dim=0)
         xa = self.speech_model(xa)
+        xim = self.vision_model(xim)
 
-        x = torch.cat([xa, xt], dim=1)
+        x = torch.cat([xa, xt, xim], dim=1)
         x = self.out_nn(x)
 
         return x

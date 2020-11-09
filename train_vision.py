@@ -1,42 +1,35 @@
 import numpy as np
-import torch
 from uxils.data_iterator import seq_iterator_ctx
 from uxils.experiment import experiment_dir_with_table
-from uxils.image.processing import imagenet_normalization
 from uxils.metrics import init_metric
-from uxils.pprint_ext import print_obj
-from uxils.profiling import Profiler
-from uxils.timer import Timer
 from uxils.torch_ext.module_utils import init_optimizer_with_model
 from uxils.torch_ext.trainer import test_loop, training_loop
-from uxils.video.io import read_video_cv2
-
-from utils import Model, get_split, prepare_auido
+from uxils.video.io import read_random_frame
+from uxils.image.face.pretrained import get_face_recognition_model
+from uxils.torch_ext.utils import freeze_layers
+from utils import Model, get_split
+from uxils.image.processing import imagenet_normalization
 
 train_dataset, val_dataset = get_split()
 
-model = Model()
+model, preprocess_image = get_face_recognition_model(num_classes=7)
+# model, preprocess_image = get_face_recognition_model("imagenet_regnetx002", num_classes=7)
+# freeze_layers(model, 0.9)
+# model.load_state_dict(torch.load("arti/"))
+
 optimizer = init_optimizer_with_model("adam", model)
 
 
 def read(pv, pa, pt, y, yf, ys):
-    x_text = np.load(pt)["word_embed"].mean(axis=0)
-    xa = prepare_auido(pa)
 
     try:
-        frames = read_video_cv2(pv)
-        image = frames[6]
-    except IndexError:
-        image = np.zeros((200, 200, 3), dtype=np.uint8)
+        image = read_random_frame(pv)
     except Exception:
-        import traceback
+        image = np.zeros((200, 200, 3), dtype=np.uint8)
 
-        exc = traceback.format_exc()
-        print(exc)
+    image = preprocess_image(image)
 
-    image = imagenet_normalization(image)
-
-    return x_text, xa, image, y
+    return image, yf
 
 
 metric = init_metric("accuracy")
@@ -52,16 +45,14 @@ with seq_iterator_ctx(
             optimizer,
             train_iter,
             loss_fn="ce",
-            forward_fn=lambda model, batch: model(*batch[:3]),
+            forward_fn=lambda model, batch: model(*batch[:-1]),
         )
 
         y_pred, y_true = test_loop(
             model,
             val_iter,
-            forward_fn=lambda model, batch: (model(*batch[:3]), batch[-1]),
+            forward_fn=lambda model, batch: (model(*batch[:-1]), batch[-1]),
         )
 
         acc = metric(y_true, y_pred.argmax(axis=1))
         table.print_row(epoch=epoch_idx, acc=acc)
-
-        torch.save(model.state_dict(), f"{out_dir}/{epoch_idx}.pt")
