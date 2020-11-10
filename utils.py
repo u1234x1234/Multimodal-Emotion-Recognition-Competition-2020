@@ -1,17 +1,21 @@
-import os
 import glob
+import os
 
 import numpy as np
 import pandas as pd
+import timm
 import torch
 from uxils.audio.io import Audio, read_audio
 from uxils.audio.processing import fixed_window
 from uxils.cache import cached_persistent
 from uxils.file_system import glob_audio, glob_files, glob_videos
+from uxils.image.face.pretrained import get_face_recognition_model
+from uxils.image.processing import imagenet_normalization
 from uxils.pandas_ext import merge_dataframes
 from uxils.torch_ext.sequential_model import init_sequential
+from uxils.torch_ext.utils import freeze_layers
+from uxils.video.io import read_video_cv2
 
-from speech_models import PretrainedSpeakerEmbedding
 
 CLASSES = [
     "neu",
@@ -91,30 +95,62 @@ def get_test():
     return paths
 
 
-def prepare_auido(path):
+def prepare_auido(path, postprocess=None):
     try:
         audio = read_audio(path, sr=16000)
     except:
         audio = Audio(np.zeros(16000, dtype=np.float32), sample_rate=16000)
 
+    if postprocess is not None:
+        audio = postprocess(audio)
+
     xa = fixed_window(audio, 4)[16000:]
     return xa
 
 
-from uxils.torch_ext.utils import freeze_layers
-import timm
-from uxils.image.face.pretrained import get_face_recognition_model
+def prepare_data(v_path, t_path):
+    x_text = np.load(t_path)["word_embed"].mean(axis=0)
+
+    try:
+        frames = read_video_cv2(v_path)
+        image = frames[6]
+    except Exception:
+        image = np.zeros((200, 200, 3), dtype=np.uint8)
+        import traceback
+
+        exc = traceback.format_exc()
+        print(exc)
+
+    image = imagenet_normalization(image)
+    return x_text, image
+
+
+def get_speech_model(model):
+    if model == "v1":
+        from speech_models import PretrainedSpeakerEmbedding
+        return PretrainedSpeakerEmbedding("models/baseline_lite_ap.model")
+    else:
+        from clovaai_ResNetSE34V2 import PretrainedSpeakerEmbedding
+        return PretrainedSpeakerEmbedding("models/baseline_v2_ap.model")
 
 
 class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.speech_model = PretrainedSpeakerEmbedding("models/baseline_lite_ap.model")
-        freeze_layers(self.speech_model, freeze=0.5, invert=0, matchers=(".*attention", "model[.]fc", ".*sap_linear"), verbose=1)
-        # freeze_layers(self.speech_model,)
+        self.speech_model = get_speech_model("v1")
 
-        self.vision_model = get_face_recognition_model("imagenet_regnetx002", num_classes=100)[0]
+        freeze_layers(
+            self.speech_model,
+            freeze=0.7,
+            invert=0,
+            matchers=(".*attention", "model[.]fc", ".*sap_linear"),
+            verbose=1,
+        )
+
+        self.vision_model = get_face_recognition_model(
+            "imagenet_regnetx002", num_classes=100
+        )[0]
         # self.text_model = init_sequential(200, [100])
 
         emb_size = 512 + 200 + 100
@@ -122,6 +158,7 @@ class Model(torch.nn.Module):
 
     def forward(self, xt, xa, xim):
         # xt = torch.stack([self.text_model(x).mean(dim=0) for x in xt], dim=0)
+
         xa = self.speech_model(xa)
         xim = self.vision_model(xim)
 
