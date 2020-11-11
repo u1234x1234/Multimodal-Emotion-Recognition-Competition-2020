@@ -135,14 +135,14 @@ def get_speech_model(model):
 
 
 class Model(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, fusion_alg):
         super().__init__()
 
         self.speech_model = get_speech_model("v1")
 
         freeze_layers(
             self.speech_model,
-            freeze=0.7,
+            freeze=0.5,
             invert=0,
             matchers=(".*attention", "model[.]fc", ".*sap_linear"),
             verbose=1,
@@ -153,8 +153,12 @@ class Model(torch.nn.Module):
         )[0]
         # self.text_model = init_sequential(200, [100])
 
-        emb_size = 512 + 200 + 100
-        self.out_nn = init_sequential(emb_size, [128, "relu", 7])
+        # emb_size = 512 + 200 + 100
+        # self.out_nn = init_sequential(emb_size, [128, "relu", 7])
+
+        from uxils.multimodal_fusion.torch import get_fusion_module
+        self.fusion = get_fusion_module([512, 200, 100], 128, fusion_alg)
+        self.out_nn = init_sequential(128, ["relu", 7])
 
     def forward(self, xt, xa, xim):
         # xt = torch.stack([self.text_model(x).mean(dim=0) for x in xt], dim=0)
@@ -162,7 +166,9 @@ class Model(torch.nn.Module):
         xa = self.speech_model(xa)
         xim = self.vision_model(xim)
 
-        x = torch.cat([xa, xt, xim], dim=1)
+        x = self.fusion([xa, xt, xim])
+
+        # x = torch.cat([xa, xt, xim], dim=1)
         x = self.out_nn(x)
 
         return x
