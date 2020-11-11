@@ -3,7 +3,6 @@ import os
 
 import numpy as np
 import pandas as pd
-import timm
 import torch
 from uxils.audio.io import Audio, read_audio
 from uxils.audio.processing import fixed_window
@@ -119,7 +118,6 @@ def prepare_data(v_path, t_path):
         import traceback
 
         exc = traceback.format_exc()
-        print(exc)
 
     image = imagenet_normalization(image)
     return x_text, image
@@ -145,7 +143,7 @@ class Model(torch.nn.Module):
             freeze=0.5,
             invert=0,
             matchers=(".*attention", "model[.]fc", ".*sap_linear"),
-            verbose=1,
+            verbose=0,
         )
 
         self.vision_model = get_face_recognition_model(

@@ -10,11 +10,8 @@ from uxils.torch_ext.trainer import test_loop, training_loop
 
 from utils import Model, get_split, prepare_auido, prepare_data
 
-n_seconds = 3
-# model.load_state_dict(torch.load("arti/8cb10e/25.pt"))
 
-
-def train_model(fusion_alg="concat", audio_aug=None):
+def train_model(fusion_alg="concat", audio_aug=None, n_seconds=3):
     def read_val(pv, pa, pt, y, yf, ys, aug=None):
         x_audio = prepare_auido(pa, postprocess=aug)
         x_text, x_image = prepare_data(v_path=pv, t_path=pt)
@@ -27,7 +24,7 @@ def train_model(fusion_alg="concat", audio_aug=None):
     optimizer = init_optimizer_with_model("adam", model)
 
     metric = init_metric("accuracy")
-    exp = torch_experiment("arti/fus004", model, "acc")
+    exp = torch_experiment("arti/fus006", model, "acc")
 
     with seq_iterator_ctx(
         train_dataset,
@@ -64,8 +61,9 @@ def train_model(fusion_alg="concat", audio_aug=None):
 
 search_space = {
     # "fusion_alg": ["mfh", "mfb", "mutan", "mlb", "concat", "linear_sum"],
-    "fusion_alg": ["mlb"],
-    "audio_aug": [None, stretch_shift_pitch],
+    "fusion_alg": ["concat"],
+    "audio_aug": [None],
+    "n_seconds": [2, 3, 4, 5],
 }
 
 execute_search_space(
