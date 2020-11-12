@@ -137,7 +137,7 @@ def get_speech_model(model):
 
 
 class Model(torch.nn.Module):
-    def __init__(self, fusion_alg, audio_freeze_first_n, audio_freeze_last_n, image_freeze_first_n):
+    def __init__(self, fusion_alg, audio_freeze_first_n, audio_freeze_last_n, image_freeze_first_n, image_model):
         super().__init__()
 
         self.speech_model = get_speech_model("v1")
@@ -150,10 +150,10 @@ class Model(torch.nn.Module):
         )
 
         self.vision_model, self.image_preprocess = get_face_recognition_model(
-            # "imagenet_regnetx002",
+            image_model,
             num_classes=128,
         )
-        freeze_layers(self.vision_model, freeze_first_n=0.95)
+        freeze_layers(self.vision_model, freeze_first_n=image_freeze_first_n)
 
         from uxils.multimodal_fusion.torch import get_fusion_module
 

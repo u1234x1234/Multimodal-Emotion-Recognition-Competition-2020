@@ -19,26 +19,34 @@ def train_model(
     fusion_alg="concat",
     audio_aug=None,
     n_seconds=3,
+    offset=1,
     optimizer="adam",
     audio_freeze_first_n=0,
     audio_freeze_last_n=0,
+    image_freeze_first_n=0,
+    image_model="imagenet_regnetx002",
 ):
     if audio_aug:
         audio_aug = augmentation_pipeline(audio_aug)
 
-    def read_val(pv, pa, pt, y, yf, ys, aug=None):
-        x_audio = prepare_auido(pa, postprocess=aug)
-        x_text, x_image = prepare_data(v_path=pv, t_path=pt)
-        return x_text, x_audio, x_image, y
-
-    read_train = partial(read_val, aug=audio_aug)
-
-    train_dataset, val_dataset = get_split()
     model = Model(
         fusion_alg=fusion_alg,
         audio_freeze_first_n=audio_freeze_first_n,
         audio_freeze_last_n=audio_freeze_last_n,
+        image_freeze_first_n=image_freeze_first_n,
+        image_model=image_model,
     )
+
+    def read_val(pv, pa, pt, y, yf, ys, aug=None, frame=None):
+        x_audio = prepare_auido(pa, postprocess=aug, n_seconds=n_seconds, offset=offset)
+        x_text, x_image = prepare_data(
+            v_path=pv, t_path=pt, frame=frame, image_preprocess=model.image_preprocess
+        )
+        return x_text, x_audio, x_image, y
+
+    read_train = partial(read_val, aug=audio_aug, frame="random")
+
+    train_dataset, val_dataset = get_split()
 
     if in_path:
         load_state_partial(model, f"{in_path}/model.pt", verbose=1)
@@ -49,12 +57,12 @@ def train_model(
     with seq_iterator_ctx(
         train_dataset,
         read=read_train,
-        subsample=5000,
+        subsample=10000,
         batch_size=20,
     ) as train_iter, seq_iterator_ctx(
         val_dataset,
         read=read_val,
-        subsample=1000,
+        subsample=2000,
         batch_size=20,
     ) as val_iter:
         training_loop(
@@ -77,12 +85,15 @@ def train_model(
 
 search_space = {
     # "fusion_alg": ["mfh", "mfb", "mutan", "mlb", "concat", "linear_sum"],
-    "fusion_alg": ["mfb"],
-    "audio_aug": [None],
-    "n_seconds": [3],
-    "optimizer": ["adam"],
+    "fusion_alg": ["mfb", "concat"],
+    "audio_aug": [None, "stretch_pitch_shift"],
+    "n_seconds": [3, 5, 7],
+    "offset": [1, 2],
+    "optimizer": ["adam", "sgd,0.01"],
     "audio_freeze_first_n": [0, 0.1, 0.25, 0.4],
     "audio_freeze_last_n": [0, 0.1, 0.25, 0.4],
+    "image_freeze_first_n": [0, 0.5, 0.95],
+    "image_model": ["imagenet_regnetx002", "facenet_pytorch_vggface2"],
 }
 
 start_pbt(

@@ -28,7 +28,7 @@ def train_model(
     )
 
     def read_val(pv, pa, pt, y, yf, ys, aug=None, frame=None):
-        x_audio = prepare_auido(pa, postprocess=aug, n_seconds=n_seconds)
+        x_audio = prepare_auido(pa, postprocess=aug, n_seconds=n_seconds, offset=offset)
         x_text, x_image = prepare_data(
             v_path=pv, t_path=pt, frame=frame, image_preprocess=model.image_preprocess
         )
