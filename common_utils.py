@@ -13,8 +13,7 @@ from uxils.image.processing import imagenet_normalization
 from uxils.pandas_ext import merge_dataframes
 from uxils.torch_ext.sequential_model import init_sequential
 from uxils.torch_ext.utils import freeze_layers
-from uxils.video.io import read_video_cv2
-
+from uxils.video.io import read_video_cv2, read_random_frame
 
 CLASSES = [
     "neu",
@@ -94,7 +93,7 @@ def get_test():
     return paths
 
 
-def prepare_auido(path, postprocess=None):
+def prepare_auido(path, postprocess=None, n_seconds=3, offset=0):
     try:
         audio = read_audio(path, sr=16000)
     except:
@@ -103,70 +102,72 @@ def prepare_auido(path, postprocess=None):
     if postprocess is not None:
         audio = postprocess(audio)
 
-    xa = fixed_window(audio, 4)[16000:]
+    xa = fixed_window(audio, n_seconds)[16000 * offset :]
     return xa
 
 
-def prepare_data(v_path, t_path):
+def prepare_data(v_path, t_path, frame, image_preprocess):
     x_text = np.load(t_path)["word_embed"].mean(axis=0)
 
     try:
-        frames = read_video_cv2(v_path)
-        image = frames[6]
+        if frame is None:  # validation
+            frames = read_video_cv2(v_path)
+            image = frames[6]
+        else:
+            image = read_random_frame(v_path)
     except Exception:
         image = np.zeros((200, 200, 3), dtype=np.uint8)
         import traceback
 
         exc = traceback.format_exc()
 
-    image = imagenet_normalization(image)
+    image = image_preprocess(image)
     return x_text, image
 
 
 def get_speech_model(model):
     if model == "v1":
         from speech_models import PretrainedSpeakerEmbedding
+
         return PretrainedSpeakerEmbedding("models/baseline_lite_ap.model")
     else:
         from clovaai_ResNetSE34V2 import PretrainedSpeakerEmbedding
+
         return PretrainedSpeakerEmbedding("models/baseline_v2_ap.model")
 
 
 class Model(torch.nn.Module):
-    def __init__(self, fusion_alg):
+    def __init__(self, fusion_alg, audio_freeze_first_n, audio_freeze_last_n, image_freeze_first_n):
         super().__init__()
 
         self.speech_model = get_speech_model("v1")
 
         freeze_layers(
             self.speech_model,
-            freeze=0.5,
-            invert=0,
-            matchers=(".*attention", "model[.]fc", ".*sap_linear"),
+            freeze_first_n=audio_freeze_first_n,
+            freeze_last_n=audio_freeze_last_n,
             verbose=0,
         )
 
-        self.vision_model = get_face_recognition_model(
-            "imagenet_regnetx002", num_classes=100
-        )[0]
-        # self.text_model = init_sequential(200, [100])
-
-        # emb_size = 512 + 200 + 100
-        # self.out_nn = init_sequential(emb_size, [128, "relu", 7])
+        self.vision_model, self.image_preprocess = get_face_recognition_model(
+            # "imagenet_regnetx002",
+            num_classes=128,
+        )
+        freeze_layers(self.vision_model, freeze_first_n=0.95)
 
         from uxils.multimodal_fusion.torch import get_fusion_module
-        self.fusion = get_fusion_module([512, 200, 100], 128, fusion_alg)
-        self.out_nn = init_sequential(128, ["relu", 7])
+
+        self.fusion = get_fusion_module([512, 200, 128], 128, fusion_alg)
+        self.out_nn = init_sequential(128, [128, "relu", 7])
 
     def forward(self, xt, xa, xim):
         # xt = torch.stack([self.text_model(x).mean(dim=0) for x in xt], dim=0)
 
         xa = self.speech_model(xa)
         xim = self.vision_model(xim)
-
         x = self.fusion([xa, xt, xim])
 
         # x = torch.cat([xa, xt, xim], dim=1)
-        x = self.out_nn(x)
+        # x = self.out_nn(xa)
 
         return x

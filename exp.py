@@ -2,8 +2,16 @@ import numpy as np
 import torch
 from uxils.torch_ext.vis import show_netron_gui_onnx
 from uxils.multimodal_fusion.torch import get_fusion_module
-from common_utils import get_split
+from common_utils import get_split, Model
 
+
+model = Model(
+    fusion_alg="concat",
+    audio_freeze_first_n=1,
+    audio_freeze_last_n=0.1,
+)
+
+qwe
 
 sizes = [100, 200]
 mod = get_fusion_module(sizes, 10, alg="mutan")

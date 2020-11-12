@@ -169,6 +169,7 @@ class PretrainedSpeakerEmbedding(nn.Module):
                 if name not in self_state:
                     name = name.replace("__S__.", "")
                 if name not in self_state:
+                    print("###", name)
                     continue
                 self_state[name].copy_(param)
 

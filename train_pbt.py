@@ -20,6 +20,8 @@ def train_model(
     audio_aug=None,
     n_seconds=3,
     optimizer="adam",
+    audio_freeze_first_n=0,
+    audio_freeze_last_n=0,
 ):
     if audio_aug:
         audio_aug = augmentation_pipeline(audio_aug)
@@ -32,7 +34,11 @@ def train_model(
     read_train = partial(read_val, aug=audio_aug)
 
     train_dataset, val_dataset = get_split()
-    model = Model(fusion_alg=fusion_alg)
+    model = Model(
+        fusion_alg=fusion_alg,
+        audio_freeze_first_n=audio_freeze_first_n,
+        audio_freeze_last_n=audio_freeze_last_n,
+    )
 
     if in_path:
         load_state_partial(model, f"{in_path}/model.pt", verbose=1)
@@ -70,21 +76,23 @@ def train_model(
 
 
 search_space = {
-    "fusion_alg": ["mfh", "mfb", "mutan", "mlb", "concat", "linear_sum"],
-    # "fusion_alg": ["concat"],
-    "audio_aug": [None, "stretch_shift_pitch"],
-    "n_seconds": [2, 3, 4, 5],
-    "optimizer": ["adam", "sgd,0.01"],
+    # "fusion_alg": ["mfh", "mfb", "mutan", "mlb", "concat", "linear_sum"],
+    "fusion_alg": ["mfb"],
+    "audio_aug": [None],
+    "n_seconds": [3],
+    "optimizer": ["adam"],
+    "audio_freeze_first_n": [0, 0.1, 0.25, 0.4],
+    "audio_freeze_last_n": [0, 0.1, 0.25, 0.4],
 }
 
 start_pbt(
     objective_func=train_model,
     search_space=search_space,
     root_path="arti_pbt001",
-    weight_from_result=lambda x: x * x,
+    weight_from_result=lambda x: x * x * x,
     n_workers=4,
     gpu_per_worker=0.5,
     cpu_per_worker=8,
-    reinit_storage=False,
+    reinit_storage=True,
     debug=False,
 )

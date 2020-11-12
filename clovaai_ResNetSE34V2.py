@@ -269,11 +269,13 @@ class PretrainedSpeakerEmbedding(nn.Module):
         if weights_path is not None:
             self_state = self.model.state_dict()
             loaded_state = torch.load(weights_path)
+
             for name, param in loaded_state.items():
                 if name not in self_state:
                     name = name.replace("__S__.", "")
                 if name not in self_state:
                     continue
+
                 self_state[name].copy_(param)
 
     def forward(self, x):
