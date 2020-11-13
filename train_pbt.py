@@ -104,6 +104,6 @@ start_pbt(
     n_workers=4,
     gpu_per_worker=0.5,
     cpu_per_worker=8,
-    reinit_storage=True,
-    debug=False,
+    reinit_storage=False,
+    debug=True,
 )

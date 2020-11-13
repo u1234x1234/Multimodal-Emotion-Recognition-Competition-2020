@@ -9,7 +9,6 @@ from uxils.audio.processing import fixed_window
 from uxils.cache import cached_persistent
 from uxils.file_system import glob_audio, glob_files, glob_videos
 from uxils.image.face.pretrained import get_face_recognition_model
-from uxils.image.processing import imagenet_normalization
 from uxils.pandas_ext import merge_dataframes
 from uxils.torch_ext.sequential_model import init_sequential
 from uxils.torch_ext.utils import freeze_layers
