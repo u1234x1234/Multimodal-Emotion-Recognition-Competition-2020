@@ -8,11 +8,15 @@ from uxils.audio.io import Audio, read_audio
 from uxils.audio.processing import fixed_window
 from uxils.cache import cached_persistent
 from uxils.file_system import glob_audio, glob_files, glob_videos
+from uxils.functools_ext import print_args_on_first_call
 from uxils.image.face.pretrained import get_face_recognition_model
+from uxils.multimodal_fusion.torch import get_fusion_module
 from uxils.pandas_ext import merge_dataframes
 from uxils.torch_ext.sequential_model import init_sequential
 from uxils.torch_ext.utils import freeze_layers
-from uxils.video.io import read_video_cv2, read_random_frame
+from uxils.video.io import read_random_frame, read_video_cv2
+from uxils.numpy_ext import take_n
+from uxils.torch_ext.sequence_modules import create_sequence_model
 
 CLASSES = [
     "neu",
@@ -105,23 +109,21 @@ def prepare_auido(path, postprocess=None, n_seconds=3, offset=0):
     return xa
 
 
-def prepare_data(v_path, t_path, frame, image_preprocess):
+def prepare_data(v_path, t_path, frame, image_preprocess, n_images):
     x_text = np.load(t_path)["word_embed"].mean(axis=0)
 
     try:
         if frame is None:  # validation
-            frames = read_video_cv2(v_path)
-            image = frames[6]
+            images = take_n(read_video_cv2(v_path), n_images, alg="uniform")
         else:
-            image = read_random_frame(v_path)
+            images = take_n(read_video_cv2(v_path), n_images, alg="random")
+
+        images = [image_preprocess(image) for image in images]
     except Exception:
-        image = np.zeros((200, 200, 3), dtype=np.uint8)
-        import traceback
+        images = np.zeros((n_images, 200, 200, 3), dtype=np.float32)
 
-        exc = traceback.format_exc()
-
-    image = image_preprocess(image)
-    return x_text, image
+    images = np.array(images).transpose(0, 3, 1, 2)
+    return x_text, images
 
 
 def get_speech_model(model):
@@ -136,37 +138,27 @@ def get_speech_model(model):
 
 
 class Model(torch.nn.Module):
-    def __init__(self, fusion_alg, audio_freeze_first_n, audio_freeze_last_n, image_freeze_first_n, image_model):
+    def __init__(
+        self,
+        fusion_alg,
+        speech_model,
+        image_freeze_first_n,
+        image_model,
+    ):
         super().__init__()
-
-        self.speech_model = get_speech_model("v1")
-
-        freeze_layers(
-            self.speech_model,
-            freeze_first_n=audio_freeze_first_n,
-            freeze_last_n=audio_freeze_last_n,
-            verbose=0,
-        )
-
-        self.vision_model, self.image_preprocess = get_face_recognition_model(
-            image_model,
-            num_classes=128,
-        )
-        freeze_layers(self.vision_model, freeze_first_n=image_freeze_first_n)
-
-        from uxils.multimodal_fusion.torch import get_fusion_module
-
         self.fusion = get_fusion_module([512, 200, 128], 128, fusion_alg)
-        self.out_nn = init_sequential(128, [128, "relu", 7])
+        self.out_nn = init_sequential(512+200+128, [128, "relu", 7])
 
+    @print_args_on_first_call
     def forward(self, xt, xa, xim):
+
         # xt = torch.stack([self.text_model(x).mean(dim=0) for x in xt], dim=0)
 
         xa = self.speech_model(xa)
         xim = self.vision_model(xim)
-        x = self.fusion([xa, xt, xim])
+        # x = self.fusion([xa, xt*0, xim])
 
-        # x = torch.cat([xa, xt, xim], dim=1)
-        # x = self.out_nn(xa)
+        x = torch.cat([xa, xt, xim], dim=1)
+        x = self.out_nn(xa)
 
         return x

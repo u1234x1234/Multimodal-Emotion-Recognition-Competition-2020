@@ -1,14 +1,14 @@
+import numpy as np
 from functools import partial
-
+from uxils.torch_ext.utils import freeze_layers
 from uxils.audio.augmentation import augmentation_pipeline
-from uxils.data_iterator import seq_iterator_ctx
-from uxils.experiment import torch_experiment
-from uxils.metrics import init_metric
 from uxils.ray_ext.hpo_executor import execute_search_space
-from uxils.torch_ext.module_utils import init_optimizer_with_model
-from uxils.torch_ext.trainer import test_loop, training_loop
-
-from common_utils import Model, get_split, prepare_auido, prepare_data
+from uxils.torch_ext.data_iterator import TorchIterator
+from uxils.torch_ext.trainer import ModelTrainer
+from uxils.image.face.pretrained import get_face_recognition_model
+from uxils.torch_ext.sequence_modules import create_sequence_model
+from uxils.multimodal_fusion.torch import FusionModule
+from common_utils import Model, get_split, prepare_auido, prepare_data, get_speech_model
 
 
 def train_model(
@@ -18,61 +18,49 @@ def train_model(
     offset=2,
     audio_freeze_first_n=0.3,
     audio_freeze_last_n=0,
-    image_freeze_first_n=0,
+    image_freeze_first_n=0.5,
+    n_images=4,
 ):
-    model = Model(
-        fusion_alg=fusion_alg,
-        audio_freeze_first_n=audio_freeze_first_n,
-        audio_freeze_last_n=audio_freeze_last_n,
-        image_freeze_first_n=image_freeze_first_n,
-    )
+    speech_model = get_speech_model("v1")
+    freeze_layers(speech_model, audio_freeze_first_n, audio_freeze_last_n)
+
+    back, im_prep = get_face_recognition_model("imagenet_regnetx002", num_classes=0)
+    freeze_layers(back, image_freeze_first_n)
+    image_model = create_sequence_model(back, "128", n_images, alg="concat")
+
+    model = FusionModule([speech_model, None, image_model], [512, 200, 128], 7, alg="concat", mm_alg="sum")
 
     def read_val(pv, pa, pt, y, yf, ys, aug=None, frame=None):
         x_audio = prepare_auido(pa, postprocess=aug, n_seconds=n_seconds, offset=offset)
         x_text, x_image = prepare_data(
-            v_path=pv, t_path=pt, frame=frame, image_preprocess=model.image_preprocess
+            v_path=pv,
+            t_path=pt,
+            frame=frame,
+            image_preprocess=im_prep,
+            n_images=n_images,
         )
-        return x_text, x_audio, x_image, y
+        return x_audio, x_text, x_image, y
 
     read_train = partial(read_val, aug=audio_aug, frame="random")
 
     train_dataset, val_dataset = get_split()
-    optimizer = init_optimizer_with_model("adam", model)
 
-    metric = init_metric("accuracy")
-    exp = torch_experiment("arti/fus003", model, "acc", print_diff=True)
+    train_iter = TorchIterator(
+        train_dataset, read=read_train, epoch_size=5000, batch_size=20
+    )
+    val_iter = TorchIterator(val_dataset, read=read_val, epoch_size=1000, batch_size=20)
 
-    with seq_iterator_ctx(
-        train_dataset,
-        read=read_train,
-        subsample=5000,
-        batch_size=20,
-    ) as train_iter, seq_iterator_ctx(
-        val_dataset,
-        read=read_val,
-        subsample=1000,
-        batch_size=20,
-    ) as val_iter:
+    trainer = ModelTrainer(
+        model=model,
+        optimizer="adam",
+        loss="ce",
+        metric="accuracy",
+        forward=lambda model, batch: model(*batch[:3]),
+        forward_val=lambda model, batch: (batch[-1], model(*batch[:3])),
+        exp_prefix="arti/m001",
+    )
 
-        for epoch_idx in range(20):
-            training_loop(
-                model,
-                optimizer,
-                train_iter,
-                loss_fn="ce",
-                forward_fn=lambda model, batch: model(*batch[:3]),
-            )
-
-            y_pred, y_true = test_loop(
-                model,
-                val_iter,
-                forward_fn=lambda model, batch: (model(*batch[:3]), batch[-1]),
-            )
-
-            acc = metric(y_true, y_pred.argmax(axis=1))
-            exp.update(acc=acc)
-
-    return acc
+    return trainer.train(train_iter, val_iter, n_epochs=20)
 
 
 train_model()
