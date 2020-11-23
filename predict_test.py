@@ -14,6 +14,7 @@ torch.set_grad_enabled(False)
 
 
 models = [
+    preload_model(MM2, "arti/m001/eaad1d/15.pt"),
     preload_model(MM, "arti/m001/0b624d/22.pt"),  # 0.59
     preload_model(MM2, "arti/m001/1837a9/38.pt"),  # 0.607
 ]
@@ -51,4 +52,4 @@ predicted_classes = ids_to_class(y_pred)
 
 file_ids = np.array(file_ids, dtype=np.int)
 df = pd.DataFrame(zip(file_ids, predicted_classes), columns=["FileID", "Emotion"])
-df.to_csv("sub_test1_003.csv", index=False)
+df.to_csv("sub_test1_004.csv", index=False)
