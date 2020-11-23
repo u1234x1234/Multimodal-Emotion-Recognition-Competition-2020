@@ -1,15 +1,14 @@
 import glob
 import os
-
+import cv2
 import numpy as np
 import pandas as pd
 import torch
+from torch.nn import functional as F
 from uxils.audio.io import Audio, read_audio
 from uxils.audio.processing import fixed_window
 from uxils.cache import cached_persistent
 from uxils.file_system import glob_audio, glob_files, glob_videos
-from uxils.functools_ext import print_args_on_first_call
-from uxils.image.face.pretrained import get_face_recognition_model
 from uxils.multimodal_fusion.torch import get_fusion_module
 from uxils.numpy_ext import take_n
 from uxils.pandas_ext import merge_dataframes
@@ -19,7 +18,6 @@ from uxils.torch_ext.sequence_modules import create_sequence_model
 from uxils.torch_ext.sequential_model import init_sequential
 from uxils.torch_ext.utils import freeze_layers
 from uxils.video.io import read_random_frame, read_video_cv2
-from torch.nn import functional as F
 
 CLASSES = [
     "neu",
@@ -90,8 +88,15 @@ def get_test(root_dir):
         bn = os.path.basename(vpath)
         v_id = bn.split("-")[0]
         tpath = f"{root_dir}/{v_id}.npz"
-        apath = f"data/audio/test1/{bn.split('.')[0]}.wav"
+        apath = f"data/audio/test2/{bn.split('.')[0]}.wav"
         vpath = f"face_images/{bn}"
+
+        if not os.path.exists(apath):
+            print(apath)
+        if not os.path.exists(vpath):
+            print(vpath)
+        if not os.path.exists(tpath):
+            print(tpath)
 
         paths.append((vpath, apath, tpath, v_id))
 
@@ -111,54 +116,47 @@ def prepare_auido(path, postprocess=None, n_seconds=3, offset=0):
     return xa
 
 
-def prepare_data(v_path, t_path, image_preprocess):
-    # x_text = np.load(t_path)["word_embed"].mean(axis=0)
+def prepare_data(v_path, t_path, image_preprocess, image_aug):
     x_text = np.load(t_path)["word_embed"]
     n2 = x_text.shape[0] // 2
-    x_text = np.hstack((
-        x_text.mean(axis=0),
-        x_text[:max(n2, 1)].mean(axis=0),
-        x_text[n2:].mean(axis=0),
-        x_text[0],
-        x_text[n2],
-        x_text[-1],
-    ))
+    x_text = np.hstack(
+        (
+            x_text.mean(axis=0),
+            x_text[: max(n2, 1)].mean(axis=0),
+            x_text[n2:].mean(axis=0),
+            x_text[0],
+            x_text[n2],
+            x_text[-1],
+            # x_text.max(axis=0),
+            # x_text.min(axis=0),
+        )
+    )
 
-    # try:
-    #     if frame is None:  # validation
-    #         images = take_n(read_video_cv2(v_path), n_images, alg="uniform")
-    #     else:
-    #         images = take_n(read_video_cv2(v_path), n_images, alg="random")
-
-    #     images = [image_preprocess(image) for image in images]
-    # except Exception:
-    #     images = np.zeros((n_images, 200, 200, 3), dtype=np.float32)
-    # images = np.array(images).transpose(0, 3, 1, 2)
-
-    images = read_im(v_path, image_preprocess).transpose(2, 0, 1).astype(np.float32)
-
+    images = read_im(v_path, image_preprocess, image_aug).transpose(2, 0, 1).astype(np.float32)
     return x_text, images
 
 
 def get_speech_model(model):
-    if model == "v1":
-        from speech_models import PretrainedSpeakerEmbedding
-
-        return PretrainedSpeakerEmbedding("models/baseline_lite_ap.model")
-    else:
-        from clovaai_ResNetSE34V2 import PretrainedSpeakerEmbedding
-
-        return PretrainedSpeakerEmbedding("models/baseline_v2_ap.model")
+    from speech_models import PretrainedSpeakerEmbedding
+    return PretrainedSpeakerEmbedding("models/baseline_lite_ap.model")
 
 
-def read_im(path, image_preprocess, n_images=4):
+def read_im(path, image_preprocess, image_aug):
     try:
         frames = read_video_cv2(path)
-        # frames = take_n(read_video_cv2(path), n_images, alg="uniform", to_np=False)
+        # if image_aug is not None:
+            # frames = take_n(frames, 4, alg="random_sorted", to_np=False)
+        # else:
         frames = [frames[3], frames[5], frames[7], frames[9]]
+
         image = np.hstack(frames)
     except Exception:
-        image = np.zeros((200, 200 * n_images, 3), dtype=np.uint8)
+        image = np.zeros((200, 200 * 4, 3), dtype=np.uint8)
+
+    if image_aug is not None:
+        image = image_aug(image)
+
+    # image = cv2.resize(image, (0, 0), fx=0.5, fy=0.5)
 
     image = image_preprocess(image)
     return image
@@ -169,13 +167,12 @@ class MM(torch.nn.Module):
         super().__init__()
 
         self.speech_model = get_speech_model("v1")
-        freeze_layers(self.speech_model, 0.5)
+        freeze_layers(self.speech_model, 0.7)
 
         self.image_model, self.im_prep = create_image_module(
-            "regnetx_002",
-            pretrained=True, num_classes=0, global_pool=""
+            "regnetx_002", pretrained=True, num_classes=0, global_pool=""
         )
-        # freeze_layers(self.image_model, 0.5, 0)
+        # freeze_layers(self.image_model, 0.2, 0)
 
         self.text_nn = init_sequential(200 * 6, [200, "relu"])
         self.image_nn = init_sequential(368 * 25, [200, "relu"])
@@ -191,3 +188,38 @@ class MM(torch.nn.Module):
 
         xt = self.text_nn(xt)
         return self.out_nn(torch.cat([xa, xt, xi], dim=1))
+
+
+class MM2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.speech_model = get_speech_model("v1")
+        freeze_layers(self.speech_model, 0.7)
+
+        self.image_model, self.im_prep = create_image_module(
+            "regnetx_002", pretrained=True, num_classes=0, global_pool="avg"
+        )
+        # freeze_layers(self.image_model, 0.5, 0)
+
+        self.text_nn = init_sequential(200 * 6, [200, "relu"])
+        self.image_nn = init_sequential(368 * 1, [200, "relu"])
+
+        self.out_nn = init_sequential(512 + 200 + 200, [256, "relu", 7])
+
+    def forward(self, xa, xt, xi):
+        xa = self.speech_model(xa)
+        xi = self.image_model(xi)
+
+        xi = self.image_nn(xi)
+
+        xt = self.text_nn(xt)
+        return self.out_nn(torch.cat([xa, xt, xi], dim=1))
+
+
+def preload_model(cls, path):
+    model = cls()
+    model.load_state_dict(torch.load(path))
+    model.cuda()
+    model.eval()
+    return model

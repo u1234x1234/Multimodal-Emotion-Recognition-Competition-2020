@@ -11,40 +11,39 @@ from uxils.torch_ext.sequence_modules import create_sequence_model
 from uxils.torch_ext.trainer import ModelTrainer
 from uxils.torch_ext.utils import freeze_layers, load_state_partial
 from uxils.audio.augmentation import augmentation_pipeline
-from common_utils import MM, get_split, prepare_auido, prepare_data
+from common_utils import MM, MM2, get_split, prepare_auido, prepare_data
+from uxils.image.aug import augmentation_pipeline as iap
 
 
 def train_model(
-    fusion_alg="concat",
-    audio_aug=None,
-    offset=0,
+    offset=1,
     n_seconds=7,
-    audio_freeze_first_n=0.5,
-    audio_freeze_last_n=5,
-    image_freeze_first_n=0.5,
-    n_images=1,
 ):
 
-    model = MM()
-    # load_state_partial(model, "arti/m001/0b624d/22.pt", verbose=1)
+    model = MM2()
+    # load_state_partial(model, "arti/m001/1837a9/38.pt", verbose=1)
 
-    def read_val(pv, pa, pt, y, yf, ys, aug=None, frame=None):
+    def read_val(pv, pa, pt, y, yf, ys, aug=None, image_aug=None):
         x_audio = prepare_auido(pa, postprocess=aug, n_seconds=n_seconds, offset=offset)
         x_text, x_image = prepare_data(
             v_path=pv,
             t_path=pt,
-            frame=frame,
             image_preprocess=model.im_prep,
-            n_images=n_images,
+            image_aug=image_aug
         )
+
         return x_audio, x_text, x_image, y
 
-    aug = augmentation_pipeline("stretch_pitch_shift")
-    read_train = partial(read_val, frame="random", aug=aug)
+    aug = None
+    # aug = augmentation_pipeline("gain_gaussian")
+    image_aug = None
+    # image_aug = iap(operations=["hflip", "rgb_shift", "brightness_contrast"])
+
+    read_train = partial(read_val, aug=aug, image_aug=image_aug)
     train_dataset, val_dataset = get_split()
 
     train_iter = TorchIterator(
-        train_dataset, read=read_train, epoch_size=5000, batch_size=32, n_workers=8
+        train_dataset, read=read_train, epoch_size=4000, batch_size=32, n_workers=12
     )
     val_iter = TorchIterator(
         val_dataset, read=read_val, epoch_size=2000, batch_size=32, n_workers=8
@@ -52,7 +51,7 @@ def train_model(
 
     trainer = ModelTrainer(
         model=model,
-        optimizer="adam",
+        optimizer="adamw",
         loss="ce",
         metric="accuracy",
         forward=lambda model, batch: model(*batch[:3]),
@@ -66,23 +65,3 @@ def train_model(
 
 
 train_model()
-# qwe
-
-search_space = {
-    # "fusion_alg": ["mfh", "mfb", "mutan", "mlb", "concat", "linear_sum"],
-    "fusion_alg": ["mfb"],
-    "audio_aug": [None],
-    "n_seconds": [7],
-    "offset": [2],
-    "audio_freeze_first_n": [0.3],
-    "audio_freeze_last_n": [0],
-}
-
-execute_search_space(
-    search_space,
-    train_model,
-    n_workers=6,
-    gpu_per_worker=0.3,
-    cpu_per_worker=6,
-    debug=True,
-)

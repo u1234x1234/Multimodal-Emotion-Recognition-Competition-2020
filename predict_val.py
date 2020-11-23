@@ -3,19 +3,18 @@ import pandas as pd
 import torch
 from torch.nn import functional as F
 from uxils.torch_ext.data_iterator import TorchIterator
-from uxils.image.processing import imagenet_normalization
 from uxils.torch_ext.trainer import test_loop
-from uxils.video.io import read_video_cv2
 from scipy.stats import gmean
+from common_utils import MM, MM2, get_test, ids_to_class, prepare_auido, prepare_data, get_split, preload_model
 
-from common_utils import MM, MM2, get_test, ids_to_class, prepare_auido, prepare_data, preload_model
+dataset = get_split()[1]
+# dataset = dataset[:1000]
 
-dataset = get_test("data/2020-2/test2/")
 torch.set_grad_enabled(False)
 
 
 models = [
-    preload_model(MM2, "arti/m001/55c424/15.pt"),
+    # preload_model(MM2, "arti/m001/55c424/15.pt"),
     preload_model(MM, "arti/m001/f3456b/18.pt"),  # 0.562
     preload_model(MM2, "arti/m001/2430bc/30.pt"),  # 0.571
     preload_model(MM, "arti/m001/0b624d/22.pt"),  # 0.59
@@ -23,7 +22,7 @@ models = [
 ]
 
 
-def read(pv, pa, pt, fid):
+def read(pv, pa, pt, y, *args):
     x_audio = prepare_auido(pa, postprocess=None, n_seconds=7, offset=1)
     x_text, x_image = prepare_data(
         v_path=pv,
@@ -31,11 +30,11 @@ def read(pv, pa, pt, fid):
         image_preprocess=models[0].im_prep,
         image_aug=None,
     )
-    return x_audio, x_text, x_image, fid
+    return x_audio, x_text, x_image, y
 
 
 data_iter = TorchIterator(dataset, read=read)
-file_ids = []
+y_true = []
 y_pred = []
 for b in data_iter:
     probabilities = []
@@ -46,14 +45,13 @@ for b in data_iter:
     prob = np.stack([x.cpu().numpy() for x in probabilities], axis=2)
     prob = gmean(prob, axis=2)
     pred = prob.argmax(axis=1)
+    # pred = prob.argmax(dim=1).cpu().numpy()
 
+    y_true.append(b[-1].cpu().numpy())
     y_pred.append(pred)
-    file_ids.append(b[-1])
+
 
 y_pred = np.hstack(y_pred)
-file_ids = np.hstack(file_ids)
-predicted_classes = ids_to_class(y_pred)
+y_true = np.hstack(y_true)
 
-file_ids = np.array(file_ids, dtype=np.int)
-df = pd.DataFrame(zip(file_ids, predicted_classes), columns=["FileID", "Emotion"])
-df.to_csv("sub_test2_002.csv", index=False)
+print((y_pred == y_true).mean())
