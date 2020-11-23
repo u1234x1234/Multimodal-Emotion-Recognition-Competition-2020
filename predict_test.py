@@ -6,6 +6,7 @@ from uxils.torch_ext.data_iterator import TorchIterator
 from uxils.image.processing import imagenet_normalization
 from uxils.torch_ext.trainer import test_loop
 from uxils.video.io import read_video_cv2
+from scipy.stats import gmean
 
 from common_utils import MM, MM2, get_test, ids_to_class, prepare_auido, prepare_data, preload_model
 
@@ -14,7 +15,7 @@ torch.set_grad_enabled(False)
 
 
 models = [
-    preload_model(MM2, "arti/m001/eaad1d/15.pt"),
+    # preload_model(MM2, "arti/m001/eaad1d/15.pt"),
     preload_model(MM, "arti/m001/0b624d/22.pt"),  # 0.59
     preload_model(MM2, "arti/m001/1837a9/38.pt"),  # 0.607
 ]
@@ -40,8 +41,9 @@ for b in data_iter:
         prob = F.softmax(model(*b[:3]), dim=1)
         probabilities.append(prob)
 
-    prob = sum(probabilities)
-    pred = prob.argmax(dim=1).cpu().numpy()
+    prob = np.stack([x.cpu().numpy() for x in probabilities], axis=2)
+    prob = gmean(prob, axis=2)
+    pred = prob.argmax(axis=1)
 
     y_pred.append(pred)
     file_ids.append(b[-1])
@@ -52,4 +54,4 @@ predicted_classes = ids_to_class(y_pred)
 
 file_ids = np.array(file_ids, dtype=np.int)
 df = pd.DataFrame(zip(file_ids, predicted_classes), columns=["FileID", "Emotion"])
-df.to_csv("sub_test1_004.csv", index=False)
+df.to_csv("sub_test1_005.csv", index=False)
