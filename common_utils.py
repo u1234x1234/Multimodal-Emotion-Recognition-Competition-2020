@@ -84,8 +84,7 @@ def get_split():
     return train, val
 
 
-def get_test():
-    root_dir = "data/2020-1/test1/"
+def get_test(root_dir):
     paths = []
     for vpath in glob.glob(f"{root_dir}/*.mp4"):
         bn = os.path.basename(vpath)
@@ -112,7 +111,7 @@ def prepare_auido(path, postprocess=None, n_seconds=3, offset=0):
     return xa
 
 
-def prepare_data(v_path, t_path, frame, image_preprocess, n_images):
+def prepare_data(v_path, t_path, image_preprocess):
     # x_text = np.load(t_path)["word_embed"].mean(axis=0)
     x_text = np.load(t_path)["word_embed"]
     n2 = x_text.shape[0] // 2
@@ -152,33 +151,6 @@ def get_speech_model(model):
         return PretrainedSpeakerEmbedding("models/baseline_v2_ap.model")
 
 
-class Model(torch.nn.Module):
-    def __init__(
-        self,
-        fusion_alg,
-        speech_model,
-        image_freeze_first_n,
-        image_model,
-    ):
-        super().__init__()
-        self.fusion = get_fusion_module([512, 200, 128], 128, fusion_alg)
-        self.out_nn = init_sequential(512 + 200 + 128, [128, "relu", 7])
-
-    @print_args_on_first_call
-    def forward(self, xt, xa, xim):
-
-        # xt = torch.stack([self.text_model(x).mean(dim=0) for x in xt], dim=0)
-
-        xa = self.speech_model(xa)
-        xim = self.vision_model(xim)
-        # x = self.fusion([xa, xt*0, xim])
-
-        x = torch.cat([xa, xt, xim], dim=1)
-        x = self.out_nn(xa)
-
-        return x
-
-
 def read_im(path, image_preprocess, n_images=4):
     try:
         frames = read_video_cv2(path)
@@ -197,7 +169,7 @@ class MM(torch.nn.Module):
         super().__init__()
 
         self.speech_model = get_speech_model("v1")
-        freeze_layers(self.speech_model, 0.5, 5)
+        freeze_layers(self.speech_model, 0.5)
 
         self.image_model, self.im_prep = create_image_module(
             "regnetx_002",

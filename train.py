@@ -10,7 +10,7 @@ from uxils.torch_ext.data_iterator import TorchIterator
 from uxils.torch_ext.sequence_modules import create_sequence_model
 from uxils.torch_ext.trainer import ModelTrainer
 from uxils.torch_ext.utils import freeze_layers, load_state_partial
-
+from uxils.audio.augmentation import augmentation_pipeline
 from common_utils import MM, get_split, prepare_auido, prepare_data
 
 
@@ -26,7 +26,7 @@ def train_model(
 ):
 
     model = MM()
-    # load_state_partial(model, "arti/m001/5fd7b2/30.pt", verbose=1)
+    # load_state_partial(model, "arti/m001/0b624d/22.pt", verbose=1)
 
     def read_val(pv, pa, pt, y, yf, ys, aug=None, frame=None):
         x_audio = prepare_auido(pa, postprocess=aug, n_seconds=n_seconds, offset=offset)
@@ -39,14 +39,15 @@ def train_model(
         )
         return x_audio, x_text, x_image, y
 
-    read_train = partial(read_val, frame="random")
+    aug = augmentation_pipeline("stretch_pitch_shift")
+    read_train = partial(read_val, frame="random", aug=aug)
     train_dataset, val_dataset = get_split()
 
     train_iter = TorchIterator(
         train_dataset, read=read_train, epoch_size=5000, batch_size=32, n_workers=8
     )
     val_iter = TorchIterator(
-        val_dataset, read=read_val, epoch_size=1000, batch_size=32, n_workers=8
+        val_dataset, read=read_val, epoch_size=2000, batch_size=32, n_workers=8
     )
 
     trainer = ModelTrainer(
