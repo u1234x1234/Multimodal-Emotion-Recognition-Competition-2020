@@ -17,8 +17,8 @@ from common_utils import MM, get_split, prepare_auido, prepare_data
 def train_model(
     fusion_alg="concat",
     audio_aug=None,
-    n_seconds=4,
-    offset=1,
+    offset=0,
+    n_seconds=7,
     audio_freeze_first_n=0.5,
     audio_freeze_last_n=5,
     image_freeze_first_n=0.5,
@@ -26,7 +26,7 @@ def train_model(
 ):
 
     model = MM()
-    # load_state_partial(model, "arti/m001/ac659d/25.pt", verbose=1)
+    # load_state_partial(model, "arti/m001/5fd7b2/30.pt", verbose=1)
 
     def read_val(pv, pa, pt, y, yf, ys, aug=None, frame=None):
         x_audio = prepare_auido(pa, postprocess=aug, n_seconds=n_seconds, offset=offset)

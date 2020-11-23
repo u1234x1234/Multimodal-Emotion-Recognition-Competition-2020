@@ -35,9 +35,8 @@ class VideoLandmarkExtractor:
 def extract_landmarks():
     from uxils.multiprocessing_ext.map import map_class
 
-    paths = glob_videos("data/2020-1/test1")
+    paths = glob_videos("data/2020-3/")
     np.random.shuffle(paths)
-    print(len(paths))
 
     map_class(
         (VideoLandmarkExtractor, "extract", dict(out_dir="face_images", max_size=400)),

@@ -121,8 +121,8 @@ def prepare_data(v_path, t_path, frame, image_preprocess, n_images):
         x_text[:max(n2, 1)].mean(axis=0),
         x_text[n2:].mean(axis=0),
         x_text[0],
+        x_text[n2],
         x_text[-1],
-        x_text.max(axis=0)
     ))
 
     # try:
@@ -179,11 +179,11 @@ class Model(torch.nn.Module):
         return x
 
 
-def read_im(path, image_preprocess, n_images=8):
+def read_im(path, image_preprocess, n_images=4):
     try:
-        # frames = read_video_cv2(path)
-        frames = take_n(read_video_cv2(path), n_images, alg="uniform", to_np=False)
-        # image = frames[6]
+        frames = read_video_cv2(path)
+        # frames = take_n(read_video_cv2(path), n_images, alg="uniform", to_np=False)
+        frames = [frames[3], frames[5], frames[7], frames[9]]
         image = np.hstack(frames)
     except Exception:
         image = np.zeros((200, 200 * n_images, 3), dtype=np.uint8)
@@ -200,13 +200,15 @@ class MM(torch.nn.Module):
         freeze_layers(self.speech_model, 0.5, 5)
 
         self.image_model, self.im_prep = create_image_module(
-            "regnetx_002", pretrained=True, num_classes=0, global_pool=""
+            "regnetx_002",
+            pretrained=True, num_classes=0, global_pool=""
         )
-        # freeze_layers(self.image_model, 0, 0.5)
+        # freeze_layers(self.image_model, 0.5, 0)
 
-        self.out_nn = init_sequential(512 + 200 + 128, [256, "relu", 7])
         self.text_nn = init_sequential(200 * 6, [200, "relu"])
-        self.image_nn = init_sequential(368 * 50, [128, "relu"])
+        self.image_nn = init_sequential(368 * 25, [200, "relu"])
+
+        self.out_nn = init_sequential(512 + 200 + 200, [256, "relu", 7])
 
     def forward(self, xa, xt, xi):
         xa = self.speech_model(xa)
