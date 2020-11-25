@@ -4,20 +4,14 @@ import cv2
 import numpy as np
 import pandas as pd
 import torch
-from torch.nn import functional as F
 from uxils.audio.io import Audio, read_audio
 from uxils.audio.processing import fixed_window
-from uxils.cache import cached_persistent
 from uxils.file_system import glob_audio, glob_files, glob_videos
-from uxils.multimodal_fusion.torch import get_fusion_module
-from uxils.numpy_ext import take_n
 from uxils.pandas_ext import merge_dataframes
-from uxils.pprint_ext import print_obj
 from uxils.torch_ext.image_modules import create_image_module
-from uxils.torch_ext.sequence_modules import create_sequence_model
 from uxils.torch_ext.sequential_model import init_sequential
 from uxils.torch_ext.utils import freeze_layers
-from uxils.video.io import read_random_frame, read_video_cv2
+
 
 CLASSES = [
     "neu",
@@ -40,7 +34,21 @@ def ids_to_class(indices):
     return [CLASSES[i] for i in indices]
 
 
-@cached_persistent
+def read_video_cv2(path):
+    cap = cv2.VideoCapture(path)
+    frames = []
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            cap.release()
+            break
+
+        frames.append(frame)
+
+    return frames
+
+
 def get_split():
     """pv, pa, pt, y_global, y_face, y_speech"""
     id_to_vpath = {
@@ -82,27 +90,6 @@ def get_split():
     return train, val
 
 
-def get_test(root_dir):
-    paths = []
-    for vpath in glob.glob(f"{root_dir}/*.mp4"):
-        bn = os.path.basename(vpath)
-        v_id = bn.split("-")[0]
-        tpath = f"{root_dir}/{v_id}.npz"
-        apath = f"data/audio/test2/{bn.split('.')[0]}.wav"
-        vpath = f"face_images/{bn}"
-
-        if not os.path.exists(apath):
-            print(apath)
-        if not os.path.exists(vpath):
-            print(vpath)
-        if not os.path.exists(tpath):
-            print(tpath)
-
-        paths.append((vpath, apath, tpath, v_id))
-
-    return paths
-
-
 def prepare_auido(path, postprocess=None, n_seconds=3, offset=0):
     try:
         audio = read_audio(path, sr=16000)
@@ -127,8 +114,6 @@ def prepare_data(v_path, t_path, image_preprocess, image_aug):
             x_text[0],
             x_text[n2],
             x_text[-1],
-            # x_text.max(axis=0),
-            # x_text.min(axis=0),
         )
     )
 
@@ -195,7 +180,7 @@ class MM2(torch.nn.Module):
         super().__init__()
 
         self.speech_model = get_speech_model("v1")
-        freeze_layers(self.speech_model, 0.7)
+        # freeze_layers(self.speech_model, 0.7)
 
         self.image_model, self.im_prep = create_image_module(
             "regnetx_002", pretrained=True, num_classes=0, global_pool="avg"

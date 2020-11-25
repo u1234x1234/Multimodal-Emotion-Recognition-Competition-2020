@@ -39,7 +39,7 @@ def extract_landmarks():
     np.random.shuffle(paths)
 
     map_class(
-        (VideoLandmarkExtractor, "extract", dict(out_dir="face_images", max_size=400)),
+        (VideoLandmarkExtractor, "extract", dict(out_dir="face_images2", max_size=400)),
         paths,
         n_workers=40,
     )
