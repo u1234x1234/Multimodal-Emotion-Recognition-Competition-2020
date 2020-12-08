@@ -136,3 +136,4 @@ dmypy.json
 models/
 audio_*
 *.wav
+*.csv
